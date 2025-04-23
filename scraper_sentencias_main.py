@@ -5,7 +5,8 @@ from helpers import (
     go_to_page,
     parse_cards,
     extract_card_info,
-    wait_for_new_page
+    wait_for_new_page,
+    extract_radicado
 )
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
@@ -46,7 +47,14 @@ def main():
 
         for idx, card in enumerate(cards, start=1):
             try:
+                 # Extrae datos básicos
                 title, process, date, theme = extract_card_info(card, wait)
+
+                # 1) click en la tarjeta para abrir el panel lateral
+                card.click()
+
+                # 2) extrae el número de radicado
+                numero_radicado = extract_radicado(wait)
             except Exception as e:
                 print(f"Error tarjeta {idx} página {page}: {e}")
                 continue
@@ -57,7 +65,8 @@ def main():
                 "title": title,
                 "process_number": process,
                 "date": date,
-                "theme": theme
+                "theme": theme,
+                "numero_radicado": numero_radicado
             }
             results.append(record)
             with open("results.json", "w", encoding="utf-8") as f:

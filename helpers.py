@@ -103,3 +103,24 @@ def wait_for_new_page(driver, wait, old_first_process, min_cards=5, timeout=30):
             pass
         time.sleep(1)
     raise TimeoutException(f"La página no cargó correctamente (primer proceso sigue {old_first_process})")
+
+def extract_radicado(wait, retries=3):
+    """
+    Espera a que el panel lateral muestre 'Número de radicado' 
+    y devuelve su valor. Retorna cadena vacía si falla.
+    """
+    for attempt in range(retries):
+        try:
+            # esperamos el contenedor de detalles
+            panel = wait.until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, "div.side-detail__actors"))
+            )
+            # buscamos la etiqueta y su valor
+            radicado_elem = panel.find_element(
+                By.XPATH,
+                ".//span[@class='side-detail__label' and contains(normalize-space(),'Número de radicado')]/span[@class='side-detail__value']"
+            )
+            return radicado_elem.text.strip()
+        except (TimeoutException, StaleElementReferenceException, NoSuchElementException):
+            time.sleep(1)
+    return ""
