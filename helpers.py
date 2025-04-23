@@ -1,3 +1,4 @@
+# helpers.py
 import json
 import time
 from selenium import webdriver
@@ -38,7 +39,6 @@ def go_to_page(driver, wait, page):
     btn_xpath = f"//button[contains(@aria-label,'Go to page {page}')]"
     pagination_btn = wait.until(EC.element_to_be_clickable((By.XPATH, btn_xpath)))
     pagination_btn.click()
-    # Espera a que el botón se marque como seleccionado
     selected_xpath = f"//button[@aria-current='true' and @aria-label='page {page}']"
     wait.until(EC.presence_of_element_located((By.XPATH, selected_xpath)))
 
@@ -52,7 +52,8 @@ def parse_cards(driver):
 
 def extract_card_info(card, wait, retries=3):
     """
-    Extrae el título y número de proceso de una tarjeta WebElement, gestionando stale elements.
+    Extrae título, número de proceso, fecha y tema de una tarjeta WebElement.
+    Maneja stale elements con reintentos.
     """
     for attempt in range(retries):
         try:
@@ -62,15 +63,28 @@ def extract_card_info(card, wait, retries=3):
                 ".//div[@class='card__info-title' and normalize-space(text())='Número de proceso:']"
                 "/following-sibling::div[@class='card__info-value']"
             ).text.strip()
-            return title, process
+            date = card.find_element(
+                By.XPATH,
+                ".//div[@class='card__info-title' and normalize-space(text())='Fecha:']"
+                "/following-sibling::div[@class='card__info-value']"
+            ).text.strip()
+            theme = card.find_element(
+                By.XPATH,
+                ".//div[@class='card__info-title' and normalize-space(text())='Tema:']"
+                "/following-sibling::div[@class='card__info-value']"
+            ).text.strip()
+            return title, process, date, theme
         except StaleElementReferenceException:
             if attempt < retries - 1:
                 time.sleep(1)
                 continue
             else:
                 raise
-        except NoSuchElementException as e:
-            raise
+        except NoSuchElementException:
+            # Si falta algún campo, devolver valores vacíos
+            return title, process, '', ''
+    # Por defecto
+    raise Exception("No se pudo extraer información de la tarjeta")
 
 
 def wait_for_new_page(driver, wait, old_first_process, min_cards=5, timeout=30):
@@ -82,7 +96,7 @@ def wait_for_new_page(driver, wait, old_first_process, min_cards=5, timeout=30):
         try:
             cards = parse_cards(driver)
             if len(cards) >= min_cards:
-                _, process = extract_card_info(cards[0], wait)
+                _, process, _, _ = extract_card_info(cards[0], wait)
                 if process != old_first_process:
                     return
         except Exception:

@@ -1,3 +1,4 @@
+# scraper_sentencias_main.py
 from helpers import (
     init_driver,
     navigate_to_sentencias,
@@ -20,9 +21,8 @@ def main():
     navigate_to_sentencias(driver, wait)
 
     results = []
-    for page in range(1, 30):
+    for page in range(1, 31):
         if page > 1:
-            # Detectar primer proceso previo para esperar contenido nuevo
             cards_before = parse_cards(driver)
             old_first = None
             if cards_before:
@@ -39,16 +39,14 @@ def main():
                 except TimeoutException as e:
                     print(f"Advertencia: {e}")
             else:
-                # Si no hay referencia previa, esperar al menos 5 tarjetas
                 wait.until(lambda d: len(parse_cards(d)) >= 5)
 
-        # Extraer tarjetas tras asegurarse carga correcta
         cards = parse_cards(driver)
         print(f"Página {page} - Tarjetas encontradas: {len(cards)}")
 
         for idx, card in enumerate(cards, start=1):
             try:
-                title, process = extract_card_info(card, wait)
+                title, process, date, theme = extract_card_info(card, wait)
             except Exception as e:
                 print(f"Error tarjeta {idx} página {page}: {e}")
                 continue
@@ -57,7 +55,9 @@ def main():
                 "page": page,
                 "card": idx,
                 "title": title,
-                "process_number": process
+                "process_number": process,
+                "date": date,
+                "theme": theme
             }
             results.append(record)
             with open("results.json", "w", encoding="utf-8") as f:
