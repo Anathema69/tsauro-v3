@@ -138,19 +138,15 @@ def extract_radicado(wait, retries=3):
             time.sleep(1)
     return ""
 
-def download_pdf(driver, wait, download_dir, nombre_pdf, timeout=20):
-    """
-    1) Hace clic en 'VER ANÁLISIS' (link texto) en el panel lateral.
-    2) Abre el href en una pestaña nueva.
-    3) Intenta click en botón DESCARGAR; si no descarga, comprueba URL .pdf y usa requests.
-    4) Guarda el PDF en download_dir con nombre nombre_pdf.
-    5) Cierra la pestaña y regresa a la principal.
-    """
-    # Encontrar el enlace "VER ANÁLISIS"
+def download_pdf(driver, wait, target_dir, nombre_pdf, timeout=30):
+    import os, time, requests, shutil
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException
+
+    # 1) Abrir "VER ANÁLISIS" en pestaña nueva
     link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "VER ANÁLISIS")))
     href = link.get_attribute("href")
-
-    # Abrir en pestaña nueva
     original = driver.current_window_handle
     driver.execute_script("window.open(arguments[0], '_blank');", href)
     for h in driver.window_handles:
@@ -158,29 +154,47 @@ def download_pdf(driver, wait, download_dir, nombre_pdf, timeout=20):
             driver.switch_to.window(h)
             break
 
-    # Esperar carga de la nueva página
-    WebDriverWait(driver, timeout).until(
-        EC.presence_of_element_located((By.TAG_NAME, "body"))
-    )
-    time.sleep(8)
+    # 2) Esperar a que cargue el panel de acciones (página lista)
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.actions")))
+    time.sleep(8)  # tiempo extra para asegurar carga completa
 
-    # Intentar click en botón DESCARGAR
-    try:
-        btn = driver.find_element(By.CSS_SELECTOR, "div.actions button.btn_primary")
-        btn.click()
-        # Tiempo para descarga automática
-        time.sleep(3)
-    except Exception:
-        pass
+    # 3) Preparar monitor de carpeta de descargas temporales
+    temp_dir = os.path.abspath(os.path.join(target_dir, os.pardir))
+    before = set(f for f in os.listdir(temp_dir) if f.lower().endswith((".pdf", ".crdownload")))
 
-    # Si la URL actual es un PDF, descargar vía requests
-    current = driver.current_url
-    if current.lower().endswith(".pdf"):
-        r = requests.get(current)
-        path = os.path.join(download_dir, nombre_pdf)
-        with open(path, "wb") as f:
-            f.write(r.content)
+    # 4) Click en botón DESCARGAR cuando esté listo
+    btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "div.actions button.btn_primary")))
+    btn.click()
 
-    # Cerrar pestaña y volver a la original
+    # 5) Esperar descarga o redirección a .pdf
+    start = time.time()
+    while time.time() - start < timeout:
+        current = driver.current_url
+        if current.lower().endswith(".pdf"):
+            # caída a PDF directo: bajar con requests
+            r = requests.get(current)
+            path = os.path.join(target_dir, nombre_pdf)
+            with open(path, "wb") as f:
+                f.write(r.content)
+            break
+
+        # o detectar nuevo archivo en temp_dir
+        after = set(f for f in os.listdir(temp_dir) if f.lower().endswith((".pdf", ".crdownload")))
+        new = after - before
+        if new:
+            # identificar el .pdf completo (no .crdownload)
+            pdfs = [f for f in new if f.lower().endswith(".pdf")]
+            if pdfs:
+                src = os.path.join(temp_dir, pdfs[0])
+                dst = os.path.join(target_dir, nombre_pdf)
+                shutil.move(src, dst)
+                break
+
+        time.sleep(1)
+    else:
+        raise TimeoutException("No se completó la descarga del PDF en el tiempo esperado")
+
+    # 6) Cerrar pestaña y volver a la original
     driver.close()
     driver.switch_to.window(original)
+
