@@ -1,6 +1,8 @@
 # helpers.py
 import json
+import os
 import time
+import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -9,15 +11,26 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException, NoSuchElementException
 
 
-def init_driver(headless=True):
+def init_driver(headless=True, download_dir=None):
     """
-    Inicializa el WebDriver de Chrome en modo headless.
+    Inicializa el WebDriver de Chrome en modo headless,
+    configurando la carpeta de descargas si se proporciona.
     """
     options = Options()
     if headless:
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")  # Headless+descarga
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+
+    # Si se quiere forzar descarga de PDF en lugar de abrirlos
+    if download_dir:
+        prefs = {
+            "download.default_directory": os.path.abspath(download_dir),
+            "download.prompt_for_download": False,
+            "plugins.always_open_pdf_externally": True
+        }
+        options.add_experimental_option("prefs", prefs)
+
     driver = webdriver.Chrome(options=options)
     return driver
 
@@ -124,3 +137,50 @@ def extract_radicado(wait, retries=3):
         except (TimeoutException, StaleElementReferenceException, NoSuchElementException):
             time.sleep(1)
     return ""
+
+def download_pdf(driver, wait, download_dir, nombre_pdf, timeout=20):
+    """
+    1) Hace clic en 'VER ANÁLISIS' (link texto) en el panel lateral.
+    2) Abre el href en una pestaña nueva.
+    3) Intenta click en botón DESCARGAR; si no descarga, comprueba URL .pdf y usa requests.
+    4) Guarda el PDF en download_dir con nombre nombre_pdf.
+    5) Cierra la pestaña y regresa a la principal.
+    """
+    # Encontrar el enlace "VER ANÁLISIS"
+    link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "VER ANÁLISIS")))
+    href = link.get_attribute("href")
+
+    # Abrir en pestaña nueva
+    original = driver.current_window_handle
+    driver.execute_script("window.open(arguments[0], '_blank');", href)
+    for h in driver.window_handles:
+        if h != original:
+            driver.switch_to.window(h)
+            break
+
+    # Esperar carga de la nueva página
+    WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((By.TAG_NAME, "body"))
+    )
+    time.sleep(8)
+
+    # Intentar click en botón DESCARGAR
+    try:
+        btn = driver.find_element(By.CSS_SELECTOR, "div.actions button.btn_primary")
+        btn.click()
+        # Tiempo para descarga automática
+        time.sleep(3)
+    except Exception:
+        pass
+
+    # Si la URL actual es un PDF, descargar vía requests
+    current = driver.current_url
+    if current.lower().endswith(".pdf"):
+        r = requests.get(current)
+        path = os.path.join(download_dir, nombre_pdf)
+        with open(path, "wb") as f:
+            f.write(r.content)
+
+    # Cerrar pestaña y volver a la original
+    driver.close()
+    driver.switch_to.window(original)

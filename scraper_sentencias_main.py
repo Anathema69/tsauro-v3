@@ -6,23 +6,30 @@ from helpers import (
     parse_cards,
     extract_card_info,
     wait_for_new_page,
-    extract_radicado
+    extract_radicado,
+    download_pdf
 )
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
 import json
 import time
+import os
 
 
 def main():
-    driver = init_driver(headless=True)
+    # 1) Creamos carpeta raíz y pasamos a init_driver
+    carpeta_raiz = "descargas_tsauro"
+    os.makedirs(carpeta_raiz, exist_ok=True)
+
+    driver = init_driver(headless=True, download_dir=carpeta_raiz)
     wait = WebDriverWait(driver, 30, poll_frequency=3)
     driver.get("https://tesauro.supersociedades.gov.co/results#/")
 
     navigate_to_sentencias(driver, wait)
 
+   
     results = []
-    for page in range(1, 31):
+    for page in range(1, 3):
         if page > 1:
             cards_before = parse_cards(driver)
             old_first = None
@@ -55,6 +62,18 @@ def main():
 
                 # 2) extrae el número de radicado
                 numero_radicado = extract_radicado(wait)
+
+                # 3) Crear carpeta dónde se guardarán los respectivos PDF
+                ruta_pdf = os.path.join(carpeta_raiz, theme)
+                os.makedirs(ruta_pdf, exist_ok=True)
+
+                # 4) Nombre de archivo
+                nombre_pdf = f"Superintendencia de Sociedades-Sentencia nro {numero_radicado} del {date}.pdf"
+
+                # 5) Descargar el PDF
+                download_pdf(driver, wait, ruta_pdf, nombre_pdf)
+
+
             except Exception as e:
                 print(f"Error tarjeta {idx} página {page}: {e}")
                 continue
@@ -66,7 +85,8 @@ def main():
                 "process_number": process,
                 "date": date,
                 "theme": theme,
-                "numero_radicado": numero_radicado
+                "numero_radicado": numero_radicado,
+                "name_PDF": nombre_pdf
             }
             results.append(record)
             with open("results.json", "w", encoding="utf-8") as f:
